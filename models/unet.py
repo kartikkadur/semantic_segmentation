@@ -1,103 +1,85 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Jun 11 12:56:42 2020
-
-@author: Karthik
-"""
-
 import torch
-
-from .model_utils import Upsample, Downsample
 from torch import nn
-
+try:
+    from model_utils import conv2d, deconv2d
+except:
+    from .model_utils import conv2d, deconv2d
 
 class UNet(nn.Module):
 
-    def __init__(self, num_classes, criterion):
+    def __init__(self, num_classes):
         super(UNet, self).__init__()
-        #criterion
-        self.criterion = criterion
-        # downsampling images
-        self.down1 = Downsample(in_channels = 3,
-                                out_channels = 64,
-                                kernel_size = 3,
-                                padding = 1)
 
-        self.down2 = Downsample(in_channels = 64,
-                                out_channels = 128,
-                                kernel_size = 3,
-                                padding = 1)
+        self.conv1 = conv2d(3, 64 , kernel_size=3)
+        self.conv1_1 = conv2d(64 , 64 , kernel_size=3)
+        self.max_pool1 = nn.MaxPool2d(kernel_size=2)
 
-        self.down3 = Downsample(in_channels = 128,
-                                out_channels = 256,
-                                kernel_size = 3,
-                                padding = 1)
+        self.conv2 = conv2d(64, 128, kernel_size=3)
+        self.conv2_1 = conv2d(128, 128, kernel_size=3)
+        self.max_pool2 = nn.MaxPool2d(kernel_size=2)
 
-        self.down4 = Downsample(in_channels = 256,
-                                out_channels = 512,
-                                kernel_size = 3,
-                                padding = 1)
+        self.conv3 = conv2d(128, 256, kernel_size=3)
+        self.conv3_1 = conv2d(256, 256, kernel_size=3)
+        self.max_pool3 = nn.MaxPool2d(kernel_size=2)
 
-        self.down5 = Downsample(in_channels = 512,
-                                out_channels = 1204,
-                                kernel_size = 3,
-                                padding = 1)
+        self.conv4 = conv2d(256, 512, kernel_size=3)
+        self.conv4_1 = conv2d(512, 512, kernel_size=3)
+        self.max_pool4 = nn.MaxPool2d(kernel_size=2)
 
-        
-        self.up4 = Upsample(in_channels = 1024,
-                            skip_channels = 512,
-                            out_channels = 512,
-                            kernel_size = 2,
-                            stride = 2,
-                            padding = 0)
+        self.conv5 = conv2d(512, 1024, kernel_size=3)
+        self.conv5_1 = conv2d(1024, 1024, kernel_size=3)
 
-        self.up3 = Upsample(in_channels = 512,
-                            skip_channels = 256,
-                            out_channels = 256,
-                            kernel_size = 2,
-                            stride = 2,
-                            padding = 0)
+        self.deconv4 = deconv2d(1024, 512)
+        self.conv6 = conv2d(1024, 512, kernel_size=3)
+        self.conv6_1 = conv2d(512, 512, kernel_size=3)
 
-        self.up2 = Upsample(in_channels = 256,
-                            skip_channels = 128,
-                            out_channels = 128,
-                            kernel_size = 2,
-                            stride = 2,
-                            padding = 0)
+        self.deconv3 = deconv2d(512, 256)
+        self.conv7 = conv2d(512, 256, kernel_size=3)
+        self.conv7_1 = conv2d(256, 256, kernel_size=3) 
 
-        self.up1 = Upsample(in_channels = 128,
-                            skip_channels = 64,
-                            out_channels = 64,
-                            kernel_size = 2,
-                            stride = 2,
-                            padding = 0)
+        self.deconv2 = deconv2d(256, 128)
+        self.conv8 = conv2d(256, 128, kernel_size=3)
+        self.conv8_1 = conv2d(128, 128, kernel_size=3)
 
-        self.conv = nn.Conv2d(in_channels = 64,
-                              out_channels = num_classes,
-                              kernel_size = 3,
-                              padding = 1)
+        self.deconv1 = deconv2d(128, 64)
+        self.conv9 = conv2d(128, 64, kernel_size=3)
+        self.conv9_1 = conv2d(64, 64, kernel_size=3)
 
-    def forward(self, inp, gt = None):
-        # downsample
-        down1 = self.down1(inp)
-        print("-----------------------------> {}".format(down1.shape))
-        down2 = self.down2(down1)
-        print("-----------------------------> {}".format(down2.shape))
-        down3 = self.down3(down2)
-        print("-----------------------------> {}".format(down3.shape))
-        down4 = self.down4(down3)
-        print("-----------------------------> {}".format(down4.shape))
-        down5 = self.down5(down4)
-        print("-----------------------------> {}".format(down5.shape))
-        # upsample
-        up4 = self.up4(down5, down4)
-        up3 = self.up3(up4, down3)
-        up2 = self.up2(up3, down2)
-        up1 = self.up1(up2, down1)
+        self.final_conv = nn.Conv2d(64, num_classes, kernel_size=1)
 
-        gt_pred = self.conv(up1)
+        self.softmax = nn.Softmax2d()
 
-        if gt is not None:
-            return self.criterion(inp, gt)
+        self.cross_entropy_loss = nn.CrossEntropyLoss()
 
-        return gt_pred
+    def network_output(self, input_image):
+        out_conv1 = self.conv1_1(self.conv1(input_image))
+        out_conv2 = self.conv2_1(self.conv2(out_conv1))
+        out_conv3 = self.conv3_1(self.conv3(out_conv2))
+        out_conv4 = self.conv4_1(self.conv4(out_conv3))
+        out_conv5 = self.conv5_1(self.conv5(out_conv4))
+
+        out_deconv4 = self.deconv4(out_conv5)
+        concat4 = torch.cat((out_conv4, out_deconv4), 1)
+        out_conv6 = self.conv6_1(self.conv6(concat4))
+
+        out_deconv3 = self.deconv3(out_conv6)
+        concat3 = torch.cat((out_conv3, out_deconv3), 1)
+        out_conv7 = self.conv7_1(self.conv7(concat3))
+
+        out_deconv2 = self.deconv2(out_conv7)
+        concat2 = torch.cat((out_conv2, out_deconv2), 1)
+        out_conv8 = self.conv8_1(self.conv8(concat2))
+
+        out_deconv1 = self.deconv1(out_conv8)
+        concat1 = torch.cat((out_conv1, out_deconv1), 1)
+        out_conv9 = self.conv9_1(self.conv9(concat1))
+
+        final_out = self.softmax(self.final_conv(out_conv9))
+
+        return final_out
+
+    def forward(self, input_image, target):
+        net_out = self.network_output(input_image)
+        loss = self.cross_entropy_loss(net_out, target)
+        return loss

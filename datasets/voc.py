@@ -10,6 +10,7 @@ Code is adapted from :
 
 import os
 import random
+import argparse
 import torchvision.transforms.functional as TF
 
 from torchvision import transforms
@@ -77,16 +78,10 @@ NUM_CLASSES = len(VOC_CLASSES)
 
 class PascalVOC(Dataset):
 
-    def __init__(self, 
-                 root,
-                 image_set = "train",
-                 download = False,
-                 year = "2012",
-                 transform = None
-                 ):
+    def __init__(self, args, root, transform=None, is_training=False):
         # Dataset year
-        self.year = year
-        if year == "2007" and image_set == "test":
+        self.year = args.year
+        if args.year == "2007" and is_training == False:
             year = "2007-test"
 
         # Dataset root directory
@@ -95,13 +90,13 @@ class PascalVOC(Dataset):
             os.makedirs(self.root, exist_ok = True)
 
         # get the url
-        self.url = DATASET_DICT[year]['url']
-        self.filename = DATASET_DICT[year]['filename']
-        self.md5 = DATASET_DICT[year]['md5']
+        self.url = DATASET_DICT[args.year]['url']
+        self.filename = DATASET_DICT[args.year]['filename']
+        self.md5 = DATASET_DICT[args.year]['md5']
         self.transforms = transform
 
         # download file if it is not yet available locally
-        if download:
+        if args.download:
             file = download_url(DATASET_DICT[year]['url'],
                                     self.root,
                                     DATASET_DICT[year]['filename'],
@@ -110,14 +105,16 @@ class PascalVOC(Dataset):
             extract_file(os.path.join(self.root, file), self.root)
         
         voc_root = os.path.join(self.root, DATASET_DICT[year]['base_dir'])
-        print(voc_root)
         if not os.path.isdir(voc_root):
             raise RuntimeError("Dataset not found/currepted. " \
                                "Check the path/ use download = True option")
         img_dir = os.path.join(voc_root, "JPEGImages")
         seg_dir = os.path.join(voc_root, "SegmentationClass")
         split_dir = os.path.join(voc_root, "ImageSets", "Segmentation")
-        split = os.path.join(split_dir, image_set.rstrip("\n") + ".txt")
+        if is_training:
+            split = os.path.join(split_dir, "train" + ".txt")
+        else:
+            split = os.path.join(split_dir, "test" + ".txt")
 
         with open(split) as f:
             item_names = [x.rstrip("\n") for x in f.readlines()]
@@ -142,7 +139,11 @@ class PascalVOC(Dataset):
         img = TF.to_tensor(img)
         mask = TF.to_tensor(mask)
 
-        return img, mask
+        inputs = dict()
+        inputs["image"] = img
+        inputs["mask"] = mask
+
+        return inputs
 
     def transform(self, image, mask):
         resize = transforms.Resize(size=(572, 572))
@@ -160,3 +161,11 @@ class PascalVOC(Dataset):
             mask = TF.vflip(mask)
 
         return image, mask
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Dataset class for PASCAL VOC dataset')
+    parser.add_argument('--year', default=2, type=int, metavar="YEAR",
+                    help='Year of the dataset')
+    parser.add_argument('--download', default=True, metavar="DOWNLOAD",
+                    help="ownload the dataset")
+    args = parser.parse_args()
